@@ -2,9 +2,13 @@
 
 <img src="assets/branding/banner.png" alt="FrostKeep — Encrypted cold backups for Proxmox." width="100%">
 
-**Cold backups. Clear recovery.**
+# FrostKeep · Proxmox backups to AWS Glacier
 
-<kbd>Proxmox VE</kbd> &nbsp; <kbd>Encrypted off-site backups</kbd> &nbsp; <kbd>MIT licensed</kbd>
+**Encrypted cold storage. A clear path to recovery.**
+
+[![Checks](https://github.com/EMOEMOJAI/FrostKeep/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/EMOEMOJAI/FrostKeep/actions/workflows/check.yml)
+[![Pre-release](https://img.shields.io/badge/status-pre--release-65BCBB?style=flat)](https://github.com/EMOEMOJAI/FrostKeep/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-65BCBB?style=flat)](LICENSE)
 
 [**Get started →**](#quick-start) &nbsp; · &nbsp; [Recovery guide](docs/guide.md#restore-a-guest) &nbsp; · &nbsp; [What's new](CHANGELOG.md)
 
@@ -12,29 +16,24 @@
 
 ---
 
-FrostKeep backs up Proxmox VMs and containers to **AWS S3 Glacier Deep Archive**. Guest archives, host configuration and recovery metadata are encrypted through rclone crypt. Recovery metadata stays immediately readable.
+FrostKeep is an open-source backup and recovery CLI for **Proxmox VE**, **QEMU virtual machines** and **LXC containers**. It creates independent `vzdump` archives, encrypts them with **rclone crypt**, and uploads them to **Amazon S3 Glacier Deep Archive**.
 
-For long-term off-site copies alongside local backups. Allow time for AWS retrieval before downloading a guest archive.
+Keep long-term off-site copies alongside your local backups. Guest archives use Deep Archive; encrypted host configuration and recovery metadata stay in S3 Standard, accessible without an archive retrieval wait.
 
 > [!IMPORTANT]
 > **Pre-release.** Validate a complete backup and a real restore on your installation before relying on FrostKeep. Keep your local backups and an independent copy of your encryption keys.
 
-## What you get
+## Built for the day you need your backup
 
-<table>
-<tr>
-<td width="50%"><strong>🔐 Encryption before upload</strong><br>rclone crypt protects contents and names.</td>
-<td width="50%"><strong>📦 One archive per guest</strong><br>Recover one VM or container independently.</td>
-</tr>
-<tr>
-<td><strong>✓ Completion you can check</strong><br>Checksums and coverage checks distinguish complete backups from partial runs.</td>
-<td><strong>↻ A way back after interruption</strong><br>Reuse verified uploads after interruption. Cleanup stays explicit.</td>
-</tr>
-<tr>
-<td><strong>🔔 Alerts on your terms</strong><br>Optional Discord, Slack or HTTPS alerts for failures and overdue backups.</td>
-<td><strong>🧊 Recovery with control</strong><br>Verified downloads. Restore to an unused guest ID, kept stopped.</td>
-</tr>
-</table>
+| Your backup should… | How FrostKeep helps |
+| --- | --- |
+| **Stay private** | Encrypts file contents, filenames and directory names before upload. |
+| **Show what's complete** | Checks guest coverage, upload sizes and storage classes before publishing completion; records SHA-256 checksums for recovery. |
+| **Recover one guest** | Retrieves an individual VM or container archive, verifies the download and restores to an unused guest ID, kept stopped. |
+| **Handle interruptions** | Reuses verified uploads when resuming; previews local cleanup before applying it. |
+| **Tell you when something is wrong** | Optional Discord, Slack or HTTPS notifications for failures and overdue backups. |
+
+Full archives, with no incremental backups or deduplication. Guest recovery requires AWS retrieval time. See [storage costs](docs/guide.md#storage-and-keys) and the [restore workflow](docs/guide.md#restore-a-guest) before choosing your schedule.
 
 ## From your host to cold storage
 
@@ -108,6 +107,8 @@ Add `--execute` to apply resume or cleanup plans. Subset runs do not reset fresh
 <div align="center">
 
 [Setup & recovery](docs/guide.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
+
+[AI documentation index](llms.txt) · [Coding agent guide](AGENTS.md)
 
 Copyright FrostKeep contributors
 

@@ -1,0 +1,21 @@
+# FrostKeep
+
+> Encrypted cold backups for Proxmox. An MIT-licensed, pre-release Python CLI for backing up Proxmox VE QEMU virtual machines and LXC containers to Amazon S3 Glacier Deep Archive using vzdump and rclone crypt.
+
+Guest backups are independent full archives, without incremental backups or deduplication. Encrypted host configuration and recovery metadata use S3 Standard. Guest recovery requires AWS archive retrieval, followed by a size and SHA-256 verified download. Restored guests remain stopped. Keep local backups and independent recovery keys; validate backup and restore on each installation.
+
+This is a public documentation index for tools that accept llms.txt context. Coding instructions live in AGENTS.md; this index does not grant permission to operate a host or cloud account.
+
+## Documentation
+
+- [Overview and quick start](https://github.com/EMOEMOJAI/FrostKeep/blob/main/README.md): Scope, requirements and first backup.
+- [Setup and recovery](https://github.com/EMOEMOJAI/FrostKeep/blob/main/docs/guide.md): Storage, keys, scheduling, alerts, interrupted runs and guest restoration.
+- [Security](https://github.com/EMOEMOJAI/FrostKeep/blob/main/SECURITY.md): Trust boundaries and vulnerability reporting.
+- [Contributing](https://github.com/EMOEMOJAI/FrostKeep/blob/main/CONTRIBUTING.md): Validation and public release export.
+- [Coding agent guide](https://github.com/EMOEMOJAI/FrostKeep/blob/main/AGENTS.md): Repository map, checks and operational boundaries.
+
+## Releases
+
+- [Release notes](https://github.com/EMOEMOJAI/FrostKeep/blob/main/CHANGELOG.md): Changes and release status.
+- [Downloads](https://github.com/EMOEMOJAI/FrostKeep/releases): Published release artifacts; main may contain newer changes.
+- [MIT license](https://github.com/EMOEMOJAI/FrostKeep/blob/main/LICENSE): Copyright FrostKeep contributors.
