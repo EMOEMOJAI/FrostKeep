@@ -42,5 +42,6 @@ tests/test_release.py
 tests/test_permissions.py
 tests/test_webhook.py
 tests/test_docs.py
+tests/test_cli.py
 tests/test_audit_backup.py
 tests/test_audit_recovery.py

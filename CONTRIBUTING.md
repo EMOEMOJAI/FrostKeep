@@ -6,9 +6,9 @@ Use synthetic fixtures; tests must never contact production hosts or cloud stora
 PYTHONDONTWRITEBYTECODE=1 bash scripts/check.sh
 ```
 
-Strict checks require rclone, ShellCheck and Gitleaks. CI covers Python 3.10/3.13, local crypt round trips, failure handling and Linux mapped-user permissions (`acl` required). macOS skips only the Linux-root tests. Automated checks do not replace a real backup, cloud retrieval and isolated restore drill.
+Strict checks require rclone, ShellCheck and Gitleaks. CI covers Python 3.10–3.14, local crypt round trips, failure handling and Linux mapped-user permissions (`acl` required), including a weekly full run. macOS skips only the Linux-root tests. Automated checks do not replace a real backup, cloud retrieval and isolated restore drill.
 
-GitHub also checks workflows, internal documentation links and CodeQL security findings. Coverage reports appear in Actions summaries and expire after 14 days; they establish a baseline without a percentage gate. Subprocess-only execution is not measured. Dependabot proposes action and coverage-tool updates weekly; review them before merging. Downloaded rclone, Gitleaks and actionlint versions/checksums are maintained in the workflow.
+GitHub also checks workflows, internal documentation links and CodeQL security findings. Coverage reports include Python subprocesses, appear in Actions summaries and expire after 14 days, without a percentage gate. CI verifies that CLI subprocess execution is measured; abruptly killed processes may not save coverage. Dependabot proposes action and coverage-tool updates weekly; review them before merging. Downloaded rclone, Gitleaks and actionlint versions/checksums are maintained in the workflow.
 
 For a release, update the version, changelog and `RELEASE_FILES`, then:
 

@@ -1,6 +1,8 @@
 [run]
 branch = True
 relative_files = True
+parallel = True
+patch = subprocess
 source =
     lib/frostkeep
     scripts
