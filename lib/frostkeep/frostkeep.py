@@ -24,7 +24,7 @@ import tempfile
 import time
 import uuid
 
-VERSION = "0.2.2"
+VERSION = "0.3.0"
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 DEFAULTS = {
     "remote": "archive:",
@@ -1254,8 +1254,13 @@ def history(cfg, limit=20):
     def read(path, run_id=None, cleaned=False):
         if not path.exists() and not path.is_symlink():
             return
-        with private_file(path).open("rb") as stream:
-            raw = stream.read(MAX_MANIFEST_BYTES * 2 + 1)
+        try:
+            with private_file(path).open("rb") as stream:
+                raw = stream.read(MAX_MANIFEST_BYTES * 2 + 1)
+        except FileNotFoundError:
+            # Cleanup may remove staging after it was enumerated. Keep any
+            # audit/state record already collected for that run.
+            return
         if len(raw) > MAX_MANIFEST_BYTES * 2:
             raise Failure("Local history record exceeds supported size")
         try:
@@ -1276,7 +1281,7 @@ def history(cfg, limit=20):
                               "started_at": data["started_at"],
                               "completed": sum(g["status"] == "complete" for g in guests),
                               "expected": len(guests), "full_scope": data.get("full_scope"),
-                              "local_cleanup_recorded": cleaned}
+                              "local_cleanup_recorded": cleaned or records.get(ident, {}).get("local_cleanup_recorded", False)}
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
             raise Failure("Invalid local history record; inspect private run records") from exc
 

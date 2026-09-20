@@ -726,6 +726,37 @@ class HistoryTests(unittest.TestCase):
         with self.assertRaises(fk.Failure):
             self.history()
 
+    def test_cleanup_record_remains_visible_when_staging_remains(self):
+        data = self.record()
+        self.write(self.root / "state/cleanup" / (data["run_id"] + ".json"), {"manifest": data})
+        self.write(self.root / "staging" / data["run_id"] / "MANIFEST.json", data)
+        self.assertTrue(self.history()[0]["local_cleanup_recorded"])
+
+    def test_concurrent_cleanup_keeps_audit_record(self):
+        data = self.record()
+        self.write(self.root / "state/cleanup" / (data["run_id"] + ".json"), {"manifest": data})
+        manifest = self.root / "staging" / data["run_id"] / "MANIFEST.json"
+        self.write(manifest, data)
+        original = fk.private_file
+        def removed(path):
+            if path == manifest:
+                manifest.unlink()
+            return original(path)
+        with patch.object(fk, "private_file", side_effect=removed):
+            rows = self.history()
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["local_cleanup_recorded"])
+
+    def test_mismatched_run_and_oversized_record_fail(self):
+        data = self.record()
+        path = self.root / "staging" / self.record(2)["run_id"] / "MANIFEST.json"
+        self.write(path, data)
+        with self.assertRaises(fk.Failure):
+            self.history()
+        path.write_bytes(b" " * (fk.MAX_MANIFEST_BYTES * 2 + 1))
+        with self.assertRaises(fk.Failure):
+            self.history()
+
 
 if __name__ == "__main__":
     unittest.main()
