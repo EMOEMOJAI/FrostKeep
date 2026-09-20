@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Keep full-backup failure and interruption alerts active after successful subset backups.
+
 ## 0.2.0 — pre-release
 
 - Configurable FrostKeep CLI with legacy command wrappers.

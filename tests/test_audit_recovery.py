@@ -1,4 +1,5 @@
 """Recovery safety regressions using synthetic objects and local subprocesses."""
+import contextlib
 import hashlib
 import io
 import json
@@ -29,7 +30,7 @@ class RecoveryAuditTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(os, "fork"), "Hard-stop probe requires fork")
     def test_hard_stop_at_publication_boundaries_remains_resumable(self):
         for boundary in ("before_manifest", "after_manifest", "before_marker", "after_marker",
-                         "before_latest", "before_full_state", "before_health", "before_local_commit"):
+                         "before_latest", "before_full_state", "before_health", "before_full_attempt", "before_local_commit"):
             with self.subTest(boundary=boundary):
                 snapshot = self.root / "mock-cloud.json"
                 pid = os.fork()
@@ -50,7 +51,8 @@ class RecoveryAuditTests(unittest.TestCase):
                     atomic = fk.atomic_json
                     def write(path, value):
                         names = {"before_latest": "latest.json", "before_full_state": "full-latest.json",
-                                 "before_health": "last-success.json", "before_local_commit": "MANIFEST.json"}
+                                 "before_health": "last-success.json", "before_full_attempt": "full-attempt.json",
+                                 "before_local_commit": "MANIFEST.json"}
                         if Path(path).name == names.get(boundary) and value.get("status") == "complete":
                             stop()
                         return atomic(path, value)
@@ -298,6 +300,130 @@ class RecoveryAuditTests(unittest.TestCase):
             with self.subTest(encoded=encoded), patch.object(restore.rclone, "json", return_value=[encoded]):
                 with self.assertRaises(fk.Failure):
                     restore.rclone.raw_object(run_id + "/" + entry["path"])
+
+
+class FullBackupHealthTests(unittest.TestCase):
+    setUp = fixtures.WorkflowTests.setUp
+    tearDown = fixtures.WorkflowTests.tearDown
+    pack = staticmethod(fixtures.WorkflowTests.pack)
+    backup = fixtures.WorkflowTests.backup
+    latest = fixtures.WorkflowTests.latest
+
+    def health(self):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            code = fk.health(self.cfg, notify=True, run=self.run)
+        return code, json.loads(output.getvalue())
+
+    def fail_full_preflight(self):
+        self.run.bad_encryption = True
+        try:
+            with self.assertRaises(fk.Failure):
+                fk.backup_invocation(self.cfg, self.backup, self.run, full_scope=True)
+        finally:
+            self.run.bad_encryption = False
+
+    @unittest.skipUnless(hasattr(os, 'fork'), 'Hard-stop probe requires fork')
+    def test_hard_stopped_full_run_survives_subset_success(self):
+        self.backup()
+        pid = os.fork()
+        if pid == 0:
+            with patch.object(fk.Backup, 'backup_guest', side_effect=lambda guest: os._exit(99)):
+                fk.backup_invocation(self.cfg, self.backup, self.run, full_scope=True)
+            os._exit(98)
+        _, status = os.waitpid(pid, 0)
+        self.assertEqual(os.waitstatus_to_exitcode(status), 99)
+        fk.backup_invocation(self.cfg, lambda: self.backup(requested=[101]), self.run)
+        code, payload = self.health()
+        self.assertEqual(code, 1)
+        self.assertIn('backup_interrupted', payload['reasons'])
+        self.backup()
+        self.assertEqual(self.health()[0], 0)
+
+    def test_finalizing_full_run_survives_subset_and_unrelated_lock(self):
+        self.backup()
+        state = Path(self.cfg['state_dir'])
+        full = dict(self.latest(), status='finalizing')
+        fk.atomic_json(state / 'full-latest.json', full)
+        self.backup(requested=[101])
+        with fk.Lock(self.cfg['lock_file']):
+            code, payload = self.health()
+        self.assertEqual(code, 1)
+        self.assertIn('backup_interrupted', payload['reasons'])
+
+    def test_active_full_backup_is_not_reported_as_interrupted(self):
+        self.backup()
+        state = Path(self.cfg['state_dir'])
+        for status in ('running', 'finalizing'):
+            with self.subTest(status=status):
+                active = dict(self.latest(), status=status)
+                for name in ('latest.json', 'full-latest.json'):
+                    fk.atomic_json(state / name, active)
+                with fk.Lock(self.cfg['lock_file']):
+                    self.assertEqual(self.health()[0], 0)
+                code, payload = self.health()
+                self.assertEqual(code, 1)
+                self.assertEqual(payload['reasons'].count('backup_interrupted'), 1)
+
+    def test_full_preflight_failure_persists_and_repeats_alerts_after_subset(self):
+        self.cfg['notification_command'] = ['/test/notify']
+        self.backup()
+        self.fail_full_preflight()
+        fk.backup_invocation(self.cfg, lambda: self.backup(requested=[101]), self.run)
+        for _ in range(2):
+            code, payload = self.health()
+            self.assertEqual(code, 1)
+            self.assertIn('full_backup_invocation_failed', payload['reasons'])
+            self.assertEqual(self.run.notification_payload, payload)
+        self.backup(requested=[101, 201])
+        self.assertEqual(self.health()[0], 0)
+
+    def test_preflight_check_cannot_clear_full_failure(self):
+        self.backup()
+        self.fail_full_preflight()
+        state = Path(self.cfg['state_dir'])
+        before = {p.name: p.read_bytes() for p in state.iterdir()}
+        self.backup(check=True)
+        self.assertEqual({p.name: p.read_bytes() for p in state.iterdir()}, before)
+        self.assertEqual(self.health()[0], 1)
+
+    def test_failed_full_publication_cannot_clear_preflight_failure(self):
+        self.backup()
+        self.fail_full_preflight()
+        self.run.fail = lambda a: 'copyto' in a and a[5].endswith('/COMPLETE.json')
+        with self.assertRaises(fk.Failure):
+            self.backup()
+        self.assertIn('full_backup_invocation_failed', self.health()[1]['reasons'])
+        self.run.fail = lambda a: False
+        run_id = self.latest()['run_id']
+        fk.backup_invocation(self.cfg, lambda: fk.resume_backup(self.cfg, run_id, execute=True, run=self.run), self.run)
+        self.assertEqual(self.health()[0], 0)
+
+    def test_subset_failure_does_not_create_persistent_full_failure(self):
+        self.backup()
+        self.run.bad_encryption = True
+        with self.assertRaises(fk.Failure):
+            fk.backup_invocation(self.cfg, lambda: self.backup(requested=[101]), self.run)
+        self.run.bad_encryption = False
+        fk.backup_invocation(self.cfg, lambda: self.backup(requested=[101]), self.run)
+        self.assertEqual(self.health()[0], 0)
+
+    def test_cli_records_full_scope_only_for_unrestricted_backup(self):
+        def fail(*args):
+            raise fk.Failure('synthetic preflight failure')
+        for guests in ([], ['101']):
+            with self.subTest(guests=guests), patch.object(fk, 'load_config', return_value=self.cfg), \
+                 patch.object(fk.signal, 'signal'), patch.object(fk.os, 'umask'), \
+                 patch.object(fk.Backup, 'execute', side_effect=fail), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                marker = Path(self.cfg['state_dir']) / 'full-attempt.json'
+                marker.unlink(missing_ok=True)
+                self.assertEqual(fk.main(['backup', *guests]), 1)
+                self.assertEqual(marker.exists(), not guests)
+        with patch.object(fk, 'load_config', return_value=self.cfg), \
+             patch.object(fk.signal, 'signal'), patch.object(fk.os, 'umask'), \
+             patch.object(fk.Backup, 'execute', return_value=0), \
+             patch.object(fk, 'backup_invocation', side_effect=AssertionError('check must not record an attempt')):
+            self.assertEqual(fk.main(['backup', '--check']), 0)
 
 
 class RecoveryFailureTests(unittest.TestCase):

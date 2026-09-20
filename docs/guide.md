@@ -73,7 +73,7 @@ sudo systemctl enable --now frostkeep-health.timer
 frostkeep health --notify
 ```
 
-Events contain status, timestamps and counts/reason codes, without guest names or credentials. Delivery failures appear in the journal and local notification records without changing data-completion status. Health checks repeat unhealthy alerts; use an external dead-man monitor for host loss or failed local monitoring. Until a full-inventory backup succeeds, health reports no full backup. Subset runs do not clear that condition.
+Events contain status, timestamps and counts/reason codes, without guest names or credentials. Delivery failures appear in the journal and local notification records without changing data-completion status. Health checks repeat unhealthy alerts; use an external dead-man monitor for host loss or failed local monitoring. Until a full-inventory backup succeeds, health reports no full backup. Subset runs do not clear failed or interrupted full-backup attempts.
 
 ## Interrupted backups and cleanup
 

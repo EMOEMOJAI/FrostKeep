@@ -652,6 +652,7 @@ class Backup:
             if self.full_scope:
                 atomic_json(self.state / "full-latest.json", self.manifest)
                 atomic_json(self.state / "last-success.json", self.manifest)
+                atomic_json(self.state / "full-attempt.json", {"event": "backup_invocation", "status": "complete", "at": utcnow()})
             # Commit local completion last: a hard stop during state updates
             # must still leave a run that explicit resume can recover.
             atomic_json(self.work / "MANIFEST.json", self.manifest)
@@ -1158,22 +1159,27 @@ def health(cfg, notify=False, run=None, now=None):
             age = -1
         if success.get("status") != "complete" or age < 0 or age > cfg["maximum_backup_age_hours"] * 3600:
             reasons.append("backup_overdue")
-    if latest_path.exists():
-        latest = record(latest_path)
-        if latest.get("status") in ("failed", "interrupted"):
-            reasons.append("latest_backup_failed")
-        elif latest.get("status") in ("running", "finalizing"):
-            try:
-                with Lock(cfg["lock_file"]):
-                    reasons.append("backup_interrupted")
-            except Failure:
-                pass
+    latest = record(latest_path)
+    full = record(state / "full-latest.json")
+    if latest.get("status") in ("failed", "interrupted"):
+        reasons.append("latest_backup_failed")
+    unfinished = ("running", "finalizing")
+    if full.get("status") in unfinished and full.get("run_id") != latest.get("run_id"):
+        # A later subset run cannot own the unfinished full run's lock.
+        reasons.append("backup_interrupted")
+    elif latest.get("status") in unfinished or full.get("status") in unfinished:
+        try:
+            with Lock(cfg["lock_file"]):
+                reasons.append("backup_interrupted")
+        except Failure:
+            pass
     attempt = state / "attempt.json"
     if record(attempt).get("status") == "failed":
         reasons.append("backup_invocation_failed")
-    full_attempt = state / "full-latest.json"
-    if record(full_attempt).get("status") in ("failed", "interrupted"):
+    if full.get("status") in ("failed", "interrupted"):
         reasons.append("full_backup_failed")
+    if record(state / "full-attempt.json").get("status") == "failed":
+        reasons.append("full_backup_invocation_failed")
     payload = {"event": "health", "status": "unhealthy" if reasons else "healthy", "reasons": reasons, "checked_at": now.isoformat()}
     print(json.dumps(payload, indent=2))
     # Repeated alerts are intentional: a failed delivery cannot silence later checks.
@@ -1182,7 +1188,7 @@ def health(cfg, notify=False, run=None, now=None):
     return 1 if reasons else 0
 
 
-def backup_invocation(cfg, operation, run=None):
+def backup_invocation(cfg, operation, run=None, full_scope=False):
     state = None
     try:
         state = private_dir(cfg["state_dir"])
@@ -1190,6 +1196,11 @@ def backup_invocation(cfg, operation, run=None):
     except BaseException:
         payload = {"event": "backup_invocation", "status": "failed", "at": utcnow()}
         if state is not None:
+            if full_scope:
+                # Retain preflight failures even when no run manifest exists.
+                # Only verified full-inventory completion clears this record.
+                with contextlib.suppress(OSError):
+                    atomic_json(state / "full-attempt.json", payload)
             with contextlib.suppress(OSError):
                 atomic_json(state / "attempt.json", payload)
         send_event(cfg, payload, run)
@@ -1273,7 +1284,7 @@ def main(argv=None):
         cfg = load_config(args.config)
         if args.command == "backup":
             operation = lambda: Backup(cfg).execute(args.guests, args.check)
-            return operation() if args.check else backup_invocation(cfg, operation)
+            return operation() if args.check else backup_invocation(cfg, operation, full_scope=not args.guests)
         if args.command == "status":
             return status(cfg)
         if args.command == "health":
