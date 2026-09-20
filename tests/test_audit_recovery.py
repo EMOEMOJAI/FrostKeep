@@ -10,7 +10,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import uuid
 from unittest.mock import patch
 
 import test_frostkeep as fixtures
@@ -572,7 +571,9 @@ class RecoveryCryptIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name).resolve()
             config = root / "rclone.conf"
-            secret = subprocess.check_output([binary, "obscure", uuid.uuid4().hex], text=True).strip()
+            # Public test material chosen to exercise a base32768 control-picture
+            # character, whose local-backend disk spelling differs from its name.
+            secret = subprocess.check_output([binary, "obscure", "public-synthetic-encoding-fixture"], text=True).strip()
             payload = os.urandom(150000)
             source = root / "source.bin"
             source.write_bytes(payload)
@@ -586,20 +587,24 @@ class RecoveryCryptIntegration(unittest.TestCase):
                     config.chmod(0o600)
                     cfg = dict(fk.DEFAULTS, rclone_config=str(config))
                     rclone = fk.Rclone(cfg, runner)
-                    rclone.call("copyto", str(source), "archive:run/payload.bin", capture=False)
+                    plaintext = "run/payload-279.bin"
+                    rclone.call("copyto", str(source), "archive:" + plaintext, capture=False)
                     with patch.object(rclone, "encryption", return_value="raw:bucket"):
-                        raw = rclone.raw_object("run/payload.bin")
+                        raw = rclone.raw_object(plaintext)
                     encoded = raw.removeprefix("raw:bucket/")
-                    encrypted = encrypted_root / encoded
-                    self.assertTrue(encrypted.is_file())
+                    listing = rclone.json("lsjson", str(encrypted_root), "--recursive", "--files-only")
+                    self.assertEqual([row['Path'] for row in listing], [encoded])
+                    physical = [p for p in encrypted_root.rglob('*') if p.is_file()]
+                    self.assertEqual(len(physical), 1)
+                    encrypted = physical[0]
                     target = root / (encoding + ".download")
                     with target.open("wb", buffering=0) as stream:
-                        rclone.call("cat", "archive:run/payload.bin", "--count", str(len(payload) + 1),
+                        rclone.call("cat", "archive:" + plaintext, "--count", str(len(payload) + 1),
                                     capture=False, output_file=stream, max_output_bytes=len(payload))
                     self.assertEqual(target.read_bytes(), payload)
                     with target.open("wb", buffering=0) as stream:
                         with self.assertRaises(fk.Failure):
-                            rclone.call("cat", "archive:run/payload.bin", "--count", "1001",
+                            rclone.call("cat", "archive:" + plaintext, "--count", "1001",
                                         capture=False, output_file=stream, max_output_bytes=1000)
                     self.assertLessEqual(target.stat().st_size, 1000)
                     damaged = bytearray(encrypted.read_bytes())
@@ -607,7 +612,7 @@ class RecoveryCryptIntegration(unittest.TestCase):
                     encrypted.write_bytes(damaged)
                     with target.open("wb", buffering=0) as stream:
                         with self.assertRaises(fk.Failure):
-                            rclone.call("cat", "archive:run/payload.bin", "--count", str(len(payload) + 1),
+                            rclone.call("cat", "archive:" + plaintext, "--count", str(len(payload) + 1),
                                         capture=False, output_file=stream, max_output_bytes=len(payload))
 
 
