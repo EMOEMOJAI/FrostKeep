@@ -169,13 +169,16 @@ class WorkflowTests(unittest.TestCase):
         staging = fk.private_dir(self.cfg["staging_dir"])
         unrelated = staging / "vzdump-qemu-999-older.vma.zst"
         unrelated.write_bytes(b"must not upload or delete")
-        self.assertEqual(self.backup(), 0)
+        # Guest-like digits in the random run ID must not affect this check.
+        with patch.object(fk.uuid, "uuid4") as run_uuid:
+            run_uuid.return_value.hex = "abcdef999abc01234567890123456789"
+            self.assertEqual(self.backup(), 0)
         manifest = self.latest()
         self.assertTrue(manifest["full_scope"])
         self.assertEqual(manifest["status"], "complete")
         self.assertEqual(len([e for e in manifest["files"] if e["role"] == "guest"]), 2)
         self.assertTrue(unrelated.exists())
-        self.assertFalse(any("999" in k for k in self.run.objects))
+        self.assertFalse(any(k.rsplit("/", 1)[-1] == unrelated.name for k in self.run.objects))
         self.assertFalse(list((staging / manifest["run_id"]).glob("*/*.zst")))
         fk.Restore(self.cfg, self.run).manifest(manifest["run_id"])
         self.assertTrue(all("--immutable" in c for c in self.run.calls if "copyto" in c))
