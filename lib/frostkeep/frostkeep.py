@@ -24,7 +24,7 @@ import tempfile
 import time
 import uuid
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 DEFAULTS = {
     "remote": "archive:",

@@ -1,6 +1,6 @@
 # Working on FrostKeep
 
-FrostKeep is a pre-release Python 3.10+ CLI for encrypted Proxmox VE guest backups to Amazon S3 Glacier Deep Archive. Runtime Python uses only the standard library. Read [README.md](README.md) for scope and [docs/guide.md](docs/guide.md) for operational behavior.
+FrostKeep is a Python 3.10+ CLI for encrypted Proxmox VE guest backups to Amazon S3 Glacier Deep Archive. Runtime Python uses only the standard library. Read [README.md](README.md) for scope and [docs/guide.md](docs/guide.md) for operational behavior.
 
 ## Repository map
 

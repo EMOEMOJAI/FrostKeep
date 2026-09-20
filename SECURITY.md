@@ -1,6 +1,6 @@
 # Security and privacy
 
-FrostKeep is pre-release. The host and root account are trusted; a compromised host can read keys and plaintext. Crypt encryption and checksums detect corruption, but cannot protect against an attacker who controls both encryption keys and object writes. A real restore drill remains essential.
+The host and root account are trusted; a compromised host can read keys and plaintext. Crypt encryption and checksums detect corruption, but cannot protect against an attacker who controls both encryption keys and object writes. A real restore drill remains essential.
 
 Keep credentials, encryption recovery material and webhook settings private. Deny deletion to the backup writer and manage recovery access separately. Versioning and deletion denial are not equivalent to immutable retention. Review restored guest networking and storage before booting.
 

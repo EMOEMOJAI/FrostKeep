@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-09-20
 
+- First stable release.
 - Keep full-backup failure and interruption alerts active after successful subset backups.
+- Deterministic local crypt filename tests across supported encodings.
+- GitHub-hosted Python 3.10–3.14 checks, CodeQL and verified release provenance.
 
 ## 0.2.0 — pre-release
 

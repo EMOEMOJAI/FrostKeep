@@ -1,6 +1,6 @@
 # FrostKeep
 
-> Encrypted cold backups for Proxmox. An MIT-licensed, pre-release Python CLI for backing up Proxmox VE QEMU virtual machines and LXC containers to Amazon S3 Glacier Deep Archive using vzdump and rclone crypt.
+> Encrypted cold backups for Proxmox. An MIT-licensed Python CLI for backing up Proxmox VE QEMU virtual machines and LXC containers to Amazon S3 Glacier Deep Archive using vzdump and rclone crypt.
 
 Guest backups are independent full archives, without incremental backups or deduplication. Encrypted host configuration and recovery metadata use S3 Standard. Guest recovery requires AWS archive retrieval, followed by a size and SHA-256 verified download. Restored guests remain stopped. Keep local backups and independent recovery keys; validate backup and restore on each installation.
 

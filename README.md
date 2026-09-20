@@ -7,7 +7,7 @@
 **Encrypted cold storage. A clear path to recovery.**
 
 [![Checks](https://github.com/EMOEMOJAI/FrostKeep/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/EMOEMOJAI/FrostKeep/actions/workflows/check.yml)
-[![Pre-release](https://img.shields.io/badge/status-pre--release-65BCBB?style=flat)](https://github.com/EMOEMOJAI/FrostKeep/releases)
+[![Stable release](https://img.shields.io/github/v/release/EMOEMOJAI/FrostKeep?color=65BCBB)](https://github.com/EMOEMOJAI/FrostKeep/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-65BCBB?style=flat)](LICENSE)
 
 [**Get started →**](#quick-start) &nbsp; · &nbsp; [Recovery guide](docs/guide.md#restore-a-guest) &nbsp; · &nbsp; [What's new](CHANGELOG.md)
@@ -21,7 +21,7 @@ FrostKeep is an open-source backup and recovery CLI for **Proxmox VE**, **QEMU v
 Keep long-term off-site copies alongside your local backups. Guest archives use Deep Archive; encrypted host configuration and recovery metadata stay in S3 Standard, accessible without an archive retrieval wait.
 
 > [!IMPORTANT]
-> **Pre-release.** Validate a complete backup and a real restore on your installation before relying on FrostKeep. Keep your local backups and an independent copy of your encryption keys.
+> Validate a complete backup and a real restore on your installation before relying on FrostKeep. Keep your local backups and an independent copy of your encryption keys.
 
 ## Built for the day you need your backup
 
