@@ -90,6 +90,8 @@ Resume creates a new run referencing verified completed uploads, with fresh dump
 
 Proxmox workers can outlive a killed client. Inspect active tasks and guest locks before restarting work; never blindly unlock a guest. Detailed diagnostics are in private per-run logs.
 
+Use `frostkeep history --limit 20` to list recent local runs, newest first (limit: 1–1000). JSON output includes recorded status, completed/expected guest counts, full-inventory scope and whether a cleanup record exists. Scope is relative to configured exclusions at backup time; older records without scope show `null`. History reads retained staging manifests, cleanup audit records and latest-state records without contacting storage. It does not prove remote completion or worker activity; deleted local records and legacy logs are not a complete historical inventory.
+
 ```sh
 frostkeep cleanup RUN_ID
 frostkeep cleanup RUN_ID --execute

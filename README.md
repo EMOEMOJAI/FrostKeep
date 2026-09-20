@@ -93,6 +93,7 @@ Rehearse [recovery](docs/guide.md#restore-a-guest), then enable [scheduling and 
 | Task | Command |
 | --- | --- |
 | Back up all included guests | `frostkeep backup` |
+| Review recent local runs | `frostkeep history` |
 | Check backup freshness | `frostkeep health --notify` |
 | Inspect a completed backup | `frostkeep restore inspect RUN_ID` |
 | Review an interrupted run | `frostkeep resume RUN_ID` |

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add read-only local backup history with guest coverage and recorded full-inventory scope.
+
 ## 0.2.2 — 2026-09-21
 
 - Clarify restore command help, execution flags, cleanup risks and option defaults.

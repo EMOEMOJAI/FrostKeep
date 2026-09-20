@@ -171,6 +171,7 @@ class WorkflowTests(unittest.TestCase):
         unrelated.write_bytes(b"must not upload or delete")
         self.assertEqual(self.backup(), 0)
         manifest = self.latest()
+        self.assertTrue(manifest["full_scope"])
         self.assertEqual(manifest["status"], "complete")
         self.assertEqual(len([e for e in manifest["files"] if e["role"] == "guest"]), 2)
         self.assertTrue(unrelated.exists())
@@ -525,6 +526,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_partial_success_does_not_reset_freshness(self):
         self.backup(requested=[101])
+        self.assertFalse(self.latest()["full_scope"])
         self.assertFalse((Path(self.cfg["state_dir"]) / "last-success.json").exists())
         self.assertEqual(fk.health(self.cfg), 1)
 
@@ -649,6 +651,80 @@ class ProcessTests(unittest.TestCase):
                 if proc.poll() is None:
                     proc.kill()
                     proc.wait()
+
+
+class HistoryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.cfg = {"state_dir": str(self.root / "state"), "staging_dir": str(self.root / "staging")}
+
+    def record(self, day=1, **extra):
+        return dict(run_id=f"202609{day:02d}T030000Z-abcdef123456", status="complete",
+                    started_at=f"2026-09-{day:02d}T03:00:00+00:00",
+                    guests=[{"id": 101, "status": "complete"}], **extra)
+
+    def write(self, path, data):
+        for parent in reversed(path.parent.parents):
+            if self.root in parent.parents or parent == self.root:
+                fk.private_dir(parent)
+        fk.private_dir(path.parent)
+        fk.atomic_json(path, data)
+
+    def history(self, limit=20):
+        out = io.StringIO()
+        with patch.object(fk, "Runner", side_effect=AssertionError("No subprocesses")), contextlib.redirect_stdout(out):
+            self.assertEqual(fk.history(self.cfg, limit), 0)
+        return json.loads(out.getvalue())["runs"]
+
+    def test_empty_history_does_not_create_state(self):
+        self.assertEqual(self.history(), [])
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_order_limit_scope_and_cleanup_survive_staging_removal(self):
+        older, newer = self.record(full_scope=True), self.record(2, full_scope=False)
+        self.write(self.root / "state/cleanup" / (older["run_id"] + ".json"), {"manifest": older})
+        self.write(self.root / "state/latest.json", older)
+        newer["status"] = "running"
+        newer["guests"].append({"id": 102, "status": "uploading"})
+        self.write(self.root / "staging" / newer["run_id"] / "MANIFEST.json", newer)
+        rows = self.history()
+        self.assertEqual([r["run_id"] for r in rows], [newer["run_id"], older["run_id"]])
+        self.assertEqual((rows[0]["completed"], rows[0]["expected"]), (1, 2))
+        self.assertFalse(rows[0]["full_scope"])
+        self.assertTrue(rows[1]["full_scope"])
+        self.assertTrue(rows[1]["local_cleanup_recorded"])
+        self.assertEqual(self.history(1), rows[:1])
+
+    def test_legacy_scope_unknown_and_staging_overrides_latest(self):
+        data = self.record()
+        self.write(self.root / "state/latest.json", dict(data, status="running"))
+        self.write(self.root / "staging" / data["run_id"] / "MANIFEST.json", data)
+        rows = self.history()
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["full_scope"])
+        self.assertEqual(rows[0]["recorded_status"], "complete")
+
+    def test_invalid_limits_and_corrupt_records_fail(self):
+        for limit in (0, -1, 1001):
+            with self.assertRaises(fk.Failure):
+                self.history(limit)
+        self.write(self.root / "state/latest.json", {"unexpected": "data"})
+        with self.assertRaises(fk.Failure):
+            self.history()
+
+    def test_symlink_and_public_record_are_rejected(self):
+        self.write(self.root / "state/latest.json", self.record())
+        path = self.root / "state/latest.json"
+        path.chmod(0o644)
+        with self.assertRaises(fk.Failure):
+            self.history()
+        path.chmod(0o600)
+        path.rename(path.with_name("target.json"))
+        path.symlink_to(path.with_name("target.json"))
+        with self.assertRaises(fk.Failure):
+            self.history()
 
 
 if __name__ == "__main__":

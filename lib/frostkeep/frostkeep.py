@@ -579,6 +579,7 @@ class Backup:
             self.remote = remote_join(self.cfg["remote"], run_id)
             self.manifest = {"schema": 2, "version": VERSION, "run_id": run_id, "status": "running",
                              "started_at": utcnow(), "finished_at": None, "files": [],
+                             "full_scope": self.full_scope,
                              "excluded_guests": self.cfg["exclude_guests"],
                              "guests": [{"id": g, "kind": guests[g], "status": "pending"} for g in selected]}
             atomic_json(self.work / "context.json", backup_context(self.cfg))
@@ -1231,6 +1232,73 @@ def status(cfg):
     return 0 if data["status"] == "complete" else 1
 
 
+def history(cfg, limit=20):
+    """Summarize retained local records without creating directories or taking a lock."""
+    if type(limit) is not int or not 1 <= limit <= 1000:
+        raise Failure("History limit must be between 1 and 1000")
+
+    def directory(path):
+        path = Path(path)
+        if not path.is_absolute() or path.resolve() != path:
+            raise Failure("History directory must be absolute and without symlinks")
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise Failure("History directory must be private and owned by the current user")
+        return path
+
+    records = {}
+
+    def read(path, run_id=None, cleaned=False):
+        if not path.exists() and not path.is_symlink():
+            return
+        with private_file(path).open("rb") as stream:
+            raw = stream.read(MAX_MANIFEST_BYTES * 2 + 1)
+        if len(raw) > MAX_MANIFEST_BYTES * 2:
+            raise Failure("Local history record exceeds supported size")
+        try:
+            data = json.loads(raw)
+            if cleaned:
+                data = data["manifest"]
+            ident = data["run_id"]
+            guests = data["guests"]
+            if (not isinstance(ident, str) or not re.fullmatch(RUN_PATTERN, ident)
+                    or (run_id is not None and ident != run_id)
+                    or data["status"] not in ("running", "finalizing", "complete", "failed", "interrupted")
+                    or not isinstance(guests, list) or len(guests) > MAX_MANIFEST_GUESTS
+                    or any(not isinstance(g, dict) or g.get("status") not in ("pending", "dumping", "uploading", "complete", "failed") for g in guests)
+                    or not isinstance(data["started_at"], str)
+                    or (data.get("full_scope") is not None and type(data["full_scope"]) is not bool)):
+                raise ValueError("Invalid history record")
+            records[ident] = {"run_id": ident, "recorded_status": data["status"],
+                              "started_at": data["started_at"],
+                              "completed": sum(g["status"] == "complete" for g in guests),
+                              "expected": len(guests), "full_scope": data.get("full_scope"),
+                              "local_cleanup_recorded": cleaned}
+        except (ValueError, TypeError, KeyError, RecursionError) as exc:
+            raise Failure("Invalid local history record; inspect private run records") from exc
+
+    state = directory(cfg["state_dir"])
+    if state:
+        for name in ("last-success.json", "full-latest.json", "latest.json"):
+            read(state / name)
+        cleaned = directory(state / "cleanup")
+        if cleaned:
+            for path in sorted(cleaned.iterdir()):
+                if path.suffix == ".json" and re.fullmatch(RUN_PATTERN, path.stem):
+                    read(path, path.stem, cleaned=True)
+    staging = directory(cfg["staging_dir"])
+    if staging:
+        for path in sorted(staging.iterdir()):
+            if re.fullmatch(RUN_PATTERN, path.name) and directory(path):
+                read(path / "MANIFEST.json", path.name)
+    rows = [records[key] for key in sorted(records, reverse=True)[:limit]]
+    print(json.dumps({"source": "local_records", "runs": rows}, indent=2))
+    return 0
+
+
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--version", action="version", version=f"FrostKeep {VERSION}")
@@ -1240,6 +1308,8 @@ def parser():
     backup.add_argument("--check", action="store_true", help="Preflight only; no dumps or uploads")
     backup.add_argument("guests", nargs="*", help="Optional explicit guest IDs")
     sub.add_parser("status", help="Show the latest run, not historical log totals")
+    recent = sub.add_parser("history", help="Show recent local run records; no remote verification")
+    recent.add_argument("--limit", type=int, default=20, help="Maximum runs, 1–1000 (default: %(default)s)")
     monitor = sub.add_parser("health", help="Check full-backup age, failure and interruption")
     monitor.add_argument("--notify", action="store_true", help="Send unhealthy results through the configured notification command")
     recovery = sub.add_parser("resume", help="Plan a new run reusing verified completed guest uploads")
@@ -1293,6 +1363,8 @@ def main(argv=None):
             return operation() if args.check else backup_invocation(cfg, operation, full_scope=not args.guests)
         if args.command == "status":
             return status(cfg)
+        if args.command == "history":
+            return history(cfg, args.limit)
         if args.command == "health":
             return health(cfg, args.notify)
         if args.command == "resume":
