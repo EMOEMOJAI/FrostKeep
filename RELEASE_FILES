@@ -9,6 +9,7 @@ CONTRIBUTING.md
 favicon.png
 assets/branding/icon.png
 assets/branding/banner.png
+assets/branding/social-preview.png
 config/frostkeep.example.json
 config/webhook.example.json
 deploy/frostkeep.service

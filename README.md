@@ -2,83 +2,113 @@
 
 <img src="assets/branding/banner.png" alt="FrostKeep — Encrypted cold backups for Proxmox." width="100%">
 
-**Independent guest archives. Encrypted off-site storage. Recovery you can rehearse.**
+**Cold backups. Clear recovery.**
 
-<kbd>Proxmox VE</kbd> &nbsp; <kbd>rclone crypt</kbd> &nbsp; <kbd>Glacier Deep Archive</kbd> &nbsp; <kbd>MIT</kbd>
+<kbd>Proxmox VE</kbd> &nbsp; <kbd>Encrypted off-site backups</kbd> &nbsp; <kbd>MIT licensed</kbd>
 
-[Quick start](#quick-start) · [Setup & recovery guide](docs/guide.md) · [Security](SECURITY.md)
+[**Get started →**](#quick-start) &nbsp; · &nbsp; [Recovery guide](docs/guide.md#restore-a-guest) &nbsp; · &nbsp; [What's new](CHANGELOG.md)
 
 </div>
 
 ---
 
-FrostKeep backs up Proxmox VMs and containers to **AWS S3 Glacier Deep Archive**. File contents, filenames and directory names are encrypted through rclone crypt. Each guest has its own archive; host configuration, logs and checksum manifests stay encrypted in **S3 Standard** for immediate access.
+FrostKeep backs up Proxmox VMs and containers to **AWS S3 Glacier Deep Archive**. Guest archives, host configuration and recovery metadata are encrypted through rclone crypt. Recovery metadata stays immediately readable.
+
+For long-term off-site copies alongside local backups. Allow time for AWS retrieval before downloading a guest archive.
 
 > [!IMPORTANT]
-> **Pre-release.** Test a complete backup and a real restore on your installation before relying on FrostKeep. Keep your regular local backups and an independent copy of your encryption keys. Deep Archive retrieval must finish before a guest archive can be downloaded.
+> **Pre-release.** Validate a complete backup and a real restore on your installation before relying on FrostKeep. Keep your local backups and an independent copy of your encryption keys.
 
-## Why FrostKeep?
+## What you get
 
-- **One archive per guest** — recover a VM or container independently.
-- **Verifiable completion** — checksums, guest coverage checks and a final completion marker.
-- **Recoverable interruptions** — resume reuses verified uploads; cleanup is explicit.
-- **Controlled restores** — verify downloads, then restore to an unused guest ID, stopped.
-- **Private configuration** — credentials and optional webhook settings stay on your host.
-- **Small runtime** — Python's standard library, Proxmox and rclone.
+<table>
+<tr>
+<td width="50%"><strong>🔐 Encryption before upload</strong><br>rclone crypt protects contents and names.</td>
+<td width="50%"><strong>📦 One archive per guest</strong><br>Recover one VM or container independently.</td>
+</tr>
+<tr>
+<td><strong>✓ Completion you can check</strong><br>Checksums and coverage checks distinguish complete backups from partial runs.</td>
+<td><strong>↻ A way back after interruption</strong><br>Reuse verified uploads after interruption. Cleanup stays explicit.</td>
+</tr>
+<tr>
+<td><strong>🔔 Alerts on your terms</strong><br>Optional Discord, Slack or HTTPS alerts for failures and overdue backups.</td>
+<td><strong>🧊 Recovery with control</strong><br>Verified downloads. Restore to an unused guest ID, kept stopped.</td>
+</tr>
+</table>
+
+## From your host to cold storage
 
 ```mermaid
 flowchart LR
-    A[Proxmox guests] --> B[Private staging]
-    B --> C[rclone crypt]
-    C --> D[Deep Archive: guest dumps]
-    C --> E[Standard: recovery metadata]
+    P["Proxmox VE<br/>Guests + host settings"] --> C["rclone crypt<br/>Encrypt contents + names"]
+    C --> A["Glacier Deep Archive<br/>Guest archives"]
+    C --> M["S3 Standard<br/>Recovery metadata"]
+    classDef source fill:#06282D,stroke:#65BCBB,color:#DDF8F5
+    classDef crypt fill:#17474C,stroke:#8CE3DB,color:#DDF8F5
+    classDef storage fill:#12383E,stroke:#65BCBB,color:#DDF8F5
+    class P source
+    class C crypt
+    class A,M storage
 ```
 
 ## Quick start
 
-Requires a supported Proxmox VE installation, root access, Python 3.10+, rclone, GNU tar, zstd and `setfacl` from the `acl` package. Included container volumes must support snapshots. Provision enough staging space for the largest compressed dump plus retained failed files and your reserve.
+**1. Prepare your storage.** Configure private S3 and rclone crypt using the [setup guide](docs/guide.md#storage-and-keys). Save your recovery keys independently.
 
-1. Configure an AWS S3 remote wrapped by a crypt remote named `archive`, with content and name encryption enabled. Save your recovery keys independently.
-2. Install from the reviewed release and edit the private configuration:
+<details>
+<summary><strong>Check the requirements</strong></summary>
 
-   ```sh
-   sudo bash scripts/install.sh
-   sudoedit /etc/frostkeep/config.json
-   sudo chmod 600 /etc/frostkeep/config.json /root/.config/rclone/rclone.conf
-   sudo frostkeep backup --check
-   ```
+- A supported Proxmox VE installation with root access.
+- Python 3.10+, rclone, GNU tar, zstd and `setfacl` from the `acl` package.
+- Snapshot support for included container volumes.
+- Staging space for your largest compressed dump, retained failed files and the configured reserve.
 
-3. Back up one guest, replacing `101` with an included guest ID:
+No Python packages to install.
 
-   ```sh
-   sudo frostkeep backup 101
-   sudo frostkeep status
-   sudo frostkeep restore list
-   ```
+</details>
 
-Follow the [guide](docs/guide.md) to rehearse recovery, configure alerts and enable scheduling. Installation does not activate a scheduler. Migrate existing installations using the guide so exclusions and scheduling are preserved.
+**2. Install and check.** From the reviewed release directory:
 
-## Everyday commands
+```sh
+sudo bash scripts/install.sh
+sudoedit /etc/frostkeep/config.json
+sudo chmod 600 /etc/frostkeep/config.json /root/.config/rclone/rclone.conf
+sudo frostkeep backup --check
+```
+
+Preflight creates no backups or uploads. Existing installations: follow the [migration steps](docs/guide.md#existing-installations).
+
+**3. Back up one guest.** Replace `101` with an included guest ID:
+
+```sh
+sudo frostkeep backup 101
+sudo frostkeep status
+sudo frostkeep restore list
+```
+
+Rehearse [recovery](docs/guide.md#restore-a-guest), then enable [scheduling and alerts](docs/guide.md#schedule-and-alerts). Installation does not activate a scheduler.
+
+<details>
+<summary><strong>Everyday commands</strong></summary>
 
 | Task | Command |
 | --- | --- |
-| Preflight only | `frostkeep backup --check` |
-| Back up included guests | `frostkeep backup` |
-| Status and freshness | `frostkeep status` · `frostkeep health --notify` |
-| Review recovery | `frostkeep resume RUN_ID` |
-| Review local cleanup | `frostkeep cleanup RUN_ID` |
+| Back up all included guests | `frostkeep backup` |
+| Check backup freshness | `frostkeep health --notify` |
 | Inspect a completed backup | `frostkeep restore inspect RUN_ID` |
+| Review an interrupted run | `frostkeep resume RUN_ID` |
+| Review local cleanup | `frostkeep cleanup RUN_ID` |
 
-Resume and cleanup require `--execute` to make changes. Subset backups do not reset full-backup freshness. FrostKeep never deletes cloud objects or automatically starts restored guests.
+Add `--execute` to apply resume or cleanup plans. Subset runs do not reset freshness. FrostKeep never deletes cloud objects or starts restored guests.
 
-[Setup & recovery](docs/guide.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+</details>
 
 ---
 
 <div align="center">
 
-**FrostKeep — Encrypted cold backups for Proxmox.**
+[Setup & recovery](docs/guide.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-[MIT license](LICENSE) · Copyright FrostKeep contributors
+Copyright FrostKeep contributors
 
 </div>
