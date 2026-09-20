@@ -1,0 +1,78 @@
+name: Release provenance
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-provenance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/check.yml
+  attest:
+    name: Verify and attest release package
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Identify package
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          source = pathlib.Path('lib/frostkeep/frostkeep.py').read_text()
+          version = re.search(r'^VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"$', source, re.M).group(1)
+          if os.environ['GITHUB_EVENT_NAME'] == 'release':
+              if os.environ['RELEASE_TAG'] != 'v' + version:
+                  raise SystemExit('Release tag must match the source version')
+              name = f'FrostKeep-{version}-public.zip'
+          else:
+              name = 'FrostKeep-candidate-' + os.environ['GITHUB_SHA'][:12] + '.zip'
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('ARCHIVE_NAME=' + name + '\n')
+          PY
+      - name: Build canonical package
+        run: |
+          mkdir -p "$RUNNER_TEMP/package"
+          python3 scripts/release.py --check --workspace
+          python3 scripts/release.py --output "$RUNNER_TEMP/export" --archive "$RUNNER_TEMP/package/$ARCHIVE_NAME"
+          python3 scripts/release.py --verify-archive "$RUNNER_TEMP/package/$ARCHIVE_NAME"
+          cd "$RUNNER_TEMP/package"
+          sha256sum "$ARCHIVE_NAME" > SHA256SUMS
+      - name: Verify published release bytes
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ARCHIVE_NAME" --pattern SHA256SUMS --dir "$RUNNER_TEMP/published"
+          cmp "$RUNNER_TEMP/package/$ARCHIVE_NAME" "$RUNNER_TEMP/published/$ARCHIVE_NAME"
+          cmp "$RUNNER_TEMP/package/SHA256SUMS" "$RUNNER_TEMP/published/SHA256SUMS"
+      - name: Attest verified package
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/package/*.zip
+      - name: Verify attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify "$RUNNER_TEMP/package/$ARCHIVE_NAME" --repo "$GITHUB_REPOSITORY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-package-${{ github.sha }}
+          path: ${{ runner.temp }}/package/
+          if-no-files-found: error
+          retention-days: 14

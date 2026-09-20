@@ -1,0 +1,2 @@
+# Validation only; the installed application has no Python package dependencies.
+coverage==7.16.1 --hash=sha256:3d8bd4e58b6a5c2018d808f297905393c6c61da466a48c3f0596a76a4900ebe4

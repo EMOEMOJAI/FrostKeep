@@ -3,12 +3,32 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
   group: checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  quality:
+    name: Workflow and documentation checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Validate workflows
+        run: |
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz --output "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+      - name: Validate public documentation
+        run: python3 scripts/check-docs.py
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -35,11 +55,37 @@ jobs:
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
           sudo install -m 0755 "$RUNNER_TEMP/gitleaks" /usr/local/bin/gitleaks
+      - name: Install pinned coverage tool
+        run: |
+          python3 -m pip install --require-hashes --only-binary=:all: --no-deps -r config/requirements-ci.txt
+          mkdir -p "$RUNNER_TEMP/coverage"
       - run: bash scripts/check.sh
         env:
           FROSTKEEP_STRICT_CHECKS: '1'
+          FROSTKEEP_COVERAGE: '1'
+          COVERAGE_FILE: ${{ runner.temp }}/coverage/.coverage
       - name: Verify Linux mapped-user permissions
-        run: sudo env PYTHONDONTWRITEBYTECODE=1 "$(command -v python3)" -m unittest discover -s tests -p test_permissions.py -v
+        run: sudo env PYTHONDONTWRITEBYTECODE=1 COVERAGE_FILE="$RUNNER_TEMP/coverage/.coverage" "$(command -v python3)" -m coverage run --parallel-mode -m unittest discover -s tests -p test_permissions.py -v
+      - name: Report branch coverage
+        env:
+          COVERAGE_FILE: ${{ runner.temp }}/coverage/.coverage
+        run: |
+          python3 -m coverage combine
+          python3 -m coverage report --skip-empty > "$RUNNER_TEMP/coverage/coverage-report.txt"
+          cat "$RUNNER_TEMP/coverage/coverage-report.txt"
+          {
+            echo '### Python ${{ matrix.python }} branch coverage'
+            echo 'Baseline report; no percentage threshold is enforced. Subprocess-only execution is not measured.'
+            echo '```text'
+            cat "$RUNNER_TEMP/coverage/coverage-report.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-python-${{ matrix.python }}
+          path: ${{ runner.temp }}/coverage/coverage-report.txt
+          if-no-files-found: error
+          retention-days: 14
       - name: Verify exported package and metadata-free archive
         run: |
           python3 scripts/release.py --output dist/frostkeep --archive "$RUNNER_TEMP/frostkeep.zip"

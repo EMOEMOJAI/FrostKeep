@@ -8,7 +8,13 @@ if [[ ${FROSTKEEP_STRICT_CHECKS:-0} == 1 ]]; then
     command -v "$tool" >/dev/null || { echo "Required check tool missing: $tool" >&2; exit 1; }
   done
 fi
-python3 -m unittest discover -s tests -v
+if [[ ${FROSTKEEP_COVERAGE:-0} == 1 ]]; then
+  : "${COVERAGE_FILE:?Set COVERAGE_FILE to a path outside the repository}"
+  python3 -m coverage run --parallel-mode -m unittest discover -s tests -v
+else
+  python3 -m unittest discover -s tests -v
+fi
+python3 scripts/check-docs.py
 python3 scripts/release.py --check --workspace
 for file in scripts/*.sh scripts/frostkeep scripts/glacier-status; do
   bash -n "$file"

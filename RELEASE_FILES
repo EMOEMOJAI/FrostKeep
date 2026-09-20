@@ -1,6 +1,10 @@
 RELEASE_FILES
 .gitignore
+.coveragerc
+.github/dependabot.yml
 .github/workflows/check.yml
+.github/workflows/codeql.yml
+.github/workflows/release.yml
 README.md
 AGENTS.md
 llms.txt
@@ -14,6 +18,7 @@ assets/branding/banner.png
 assets/branding/social-preview.png
 config/frostkeep.example.json
 config/webhook.example.json
+config/requirements-ci.txt
 deploy/frostkeep.service
 deploy/frostkeep.timer
 deploy/frostkeep-health.service
@@ -29,11 +34,13 @@ scripts/install.sh
 scripts/notify-example.sh
 scripts/notify-webhook.py
 scripts/check.sh
+scripts/check-docs.py
 scripts/release.py
 tests/test_frostkeep.py
 tests/test_integration.py
 tests/test_release.py
 tests/test_permissions.py
 tests/test_webhook.py
+tests/test_docs.py
 tests/test_audit_backup.py
 tests/test_audit_recovery.py
