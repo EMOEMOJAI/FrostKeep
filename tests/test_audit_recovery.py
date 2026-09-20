@@ -1,5 +1,6 @@
 """Recovery safety regressions using synthetic objects and local subprocesses."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -297,6 +298,145 @@ class RecoveryAuditTests(unittest.TestCase):
             with self.subTest(encoded=encoded), patch.object(restore.rclone, "json", return_value=[encoded]):
                 with self.assertRaises(fk.Failure):
                     restore.rclone.raw_object(run_id + "/" + entry["path"])
+
+
+class RecoveryFailureTests(unittest.TestCase):
+    setUp = fixtures.WorkflowTests.setUp
+    tearDown = fixtures.WorkflowTests.tearDown
+    pack = staticmethod(fixtures.WorkflowTests.pack)
+    backup = fixtures.WorkflowTests.backup
+    latest = fixtures.WorkflowTests.latest
+    restore_fixture = fixtures.WorkflowTests.restore_fixture
+    interrupted_fixture = fixtures.WorkflowTests.interrupted_fixture
+
+    def test_interrupted_download_removes_partial_and_allows_retry(self):
+        restore, run_id, entry, local = self.restore_fixture()
+        original = restore.rclone.call
+        for error in (fk.Interrupted('test interruption'), subprocess.TimeoutExpired('fixture', 1)):
+            with self.subTest(error=type(error).__name__):
+                destination = self.root / type(error).__name__
+                def interrupted(*args, **kwargs):
+                    if kwargs.get('output_file') is not None:
+                        kwargs['output_file'].write(b'partial')
+                        raise error
+                    return original(*args, **kwargs)
+                with patch.object(restore.rclone, 'call', side_effect=interrupted):
+                    with self.assertRaises(type(error)):
+                        restore.download(run_id, entry['path'], destination)
+                self.assertFalse((destination / entry['path']).exists())
+                self.assertEqual(list(destination.glob('.download-*')), [])
+                downloaded = restore.download(run_id, entry['path'], destination)
+                self.assertEqual(downloaded.read_bytes(), local.read_bytes())
+                self.assertEqual(destination.stat().st_mode & 0o077, 0)
+
+    def test_download_keeps_file_created_during_transfer(self):
+        restore, run_id, entry, _ = self.restore_fixture()
+        destination = self.root / 'downloads'
+        target = destination / entry['path']
+        original = restore.rclone.call
+        def racing_writer(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if kwargs.get('output_file') is not None:
+                target.write_bytes(b'created by another process')
+            return result
+        with patch.object(restore.rclone, 'call', side_effect=racing_writer):
+            with self.assertRaises(FileExistsError):
+                restore.download(run_id, entry['path'], destination)
+        self.assertEqual(target.read_bytes(), b'created by another process')
+        self.assertEqual(list(destination.glob('.download-*')), [])
+
+    def test_same_size_corruption_never_publishes_download(self):
+        restore, run_id, entry, _ = self.restore_fixture()
+        obj = self.run.objects[fk.entry_remote(self.cfg, run_id, entry)]
+        obj['data'] = bytes([obj['data'][0] ^ 1]) + obj['data'][1:]
+        destination = self.root / 'downloads'
+        with self.assertRaisesRegex(fk.Failure, 'SHA-256'):
+            restore.download(run_id, entry['path'], destination)
+        self.assertFalse((destination / entry['path']).exists())
+        self.assertEqual(list(destination.glob('.download-*')), [])
+
+    def test_insufficient_download_space_stops_before_payload_read(self):
+        restore, run_id, entry, _ = self.restore_fixture()
+        destination = self.root / 'downloads'
+        self.run.calls.clear()
+        with patch.object(fk.shutil, 'disk_usage', return_value=type('Usage', (), {'free': entry['size']})()):
+            with self.assertRaisesRegex(fk.Failure, 'Insufficient space'):
+                restore.download(run_id, entry['path'], destination)
+        remote = fk.entry_remote(self.cfg, run_id, entry)
+        self.assertFalse(any('cat' in call and remote in call for call in self.run.calls))
+        self.assertEqual(list(destination.glob('.download-*')), [])
+
+    def test_restore_failures_preserve_archive_and_restore_log_destination(self):
+        _, run_id, entry, local = self.restore_fixture()
+        previous_log = io.StringIO()
+        backend = self.run
+        class LoggedFixtureRunner(fk.Runner):
+            def __call__(self, argv, **kwargs):
+                if argv[0] in ('zstd', 'qmrestore'):
+                    self.log.write('synthetic restore diagnostic\n')
+                return backend(argv, **kwargs)
+        runner = LoggedFixtureRunner(log=previous_log)
+        restore = fk.Restore(self.cfg, runner)
+        original = local.read_bytes()
+        for failure in ('zstd', 'qmrestore'):
+            with self.subTest(failure=failure):
+                backend.calls.clear()
+                backend.fail = lambda args: args[0] == failure
+                with self.assertRaises(fk.Failure):
+                    restore.guest(run_id, entry['path'], local, 901, 'local-zfs', execute=True)
+                self.assertIs(runner.log, previous_log)
+                self.assertFalse(previous_log.closed)
+                self.assertEqual(local.read_bytes(), original)
+                restores = [call for call in backend.calls if call[0] == 'qmrestore']
+                self.assertEqual(len(restores), int(failure == 'qmrestore'))
+                self.assertFalse(any(call[0] in ('qm', 'pct') and call[1] in ('start', 'destroy', 'set') for call in backend.calls))
+                with fk.Lock(self.cfg['lock_file']):
+                    pass
+        logs = list((Path(self.cfg['state_dir']) / 'restore-logs').glob('*.log'))
+        self.assertEqual(len(logs), 2)
+        for log in logs:
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+            self.assertIn('synthetic restore diagnostic', log.read_text())
+
+    def test_restore_requires_confirmation_that_guest_is_stopped(self):
+        restore, run_id, entry, local = self.restore_fixture()
+        self.run.running_guest = True
+        self.run.calls.clear()
+        with self.assertRaisesRegex(fk.Failure, 'not confirmed stopped'):
+            restore.guest(run_id, entry['path'], local, 901, 'local-zfs', execute=True)
+        self.assertTrue(local.is_file())
+        self.assertEqual(sum(call[0] == 'qmrestore' for call in self.run.calls), 1)
+        self.assertFalse(any(call[0] in ('qm', 'pct') and call[1] in ('start', 'destroy') for call in self.run.calls))
+
+    def test_ambiguous_retrieval_status_is_not_accepted(self):
+        restore, run_id, entry, _ = self.restore_fixture()
+        original = restore.rclone.json
+        for response in ({}, [], [{'Remote': 'other-object'}],
+                         [{'Remote': 'encrypted-object'}, {'Remote': 'encrypted-object'}]):
+            with self.subTest(response=response):
+                def ambiguous(*args, **kwargs):
+                    if args[:2] == ('backend', 'restore-status'):
+                        return response
+                    return original(*args, **kwargs)
+                with patch.object(restore.rclone, 'json', side_effect=ambiguous):
+                    with self.assertRaisesRegex(fk.Failure, 'retrieval status|Retrieval status'):
+                        restore.retrieval_status(run_id, entry['path'])
+
+    def test_resume_without_guest_metadata_preserves_original_run(self):
+        old = self.interrupted_fixture()
+        work = Path(self.cfg['staging_dir']) / old['run_id']
+        old['files'] = [e for e in old['files'] if e['role'] != 'guest_metadata']
+        fk.atomic_json(work / 'MANIFEST.json', old)
+        before = {str(p.relative_to(work)): p.read_bytes() for p in work.rglob('*') if p.is_file()}
+        remote_before = {key: dict(value) for key, value in self.run.objects.items()}
+        self.run.calls.clear()
+        with self.assertRaisesRegex(fk.Failure, 'lacks backup metadata'):
+            fk.resume_backup(self.cfg, old['run_id'], execute=True, run=self.run)
+        after = {str(p.relative_to(work)): p.read_bytes() for p in work.rglob('*') if p.is_file()}
+        self.assertEqual(after, before)
+        self.assertEqual(self.run.objects, remote_before)
+        self.assertEqual(list(Path(self.cfg['staging_dir']).iterdir()), [work])
+        self.assertFalse(any(call[0] == 'vzdump' or 'copyto' in call for call in self.run.calls))
 
 
 @unittest.skipUnless(shutil.which("rclone"), "Install rclone for local streaming integration")
