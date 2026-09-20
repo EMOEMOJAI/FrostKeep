@@ -1,0 +1,19 @@
+[Unit]
+Description=FrostKeep encrypted Proxmox cold backup
+Wants=network-online.target
+After=network-online.target pve-cluster.service
+ConditionPathExists=/etc/frostkeep/config.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/frostkeep backup
+User=root
+UMask=0077
+TimeoutStartSec=infinity
+TimeoutStopSec=60
+KillMode=control-group
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=journal
+StandardError=journal

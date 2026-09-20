@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly FrostKeep backup at 03:00 in the host timezone
+
+[Timer]
+OnCalendar=*-*-01 03:00:00
+Persistent=true
+Unit=frostkeep.service
+
+[Install]
+WantedBy=timers.target

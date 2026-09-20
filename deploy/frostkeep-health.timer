@@ -1,0 +1,11 @@
+[Unit]
+Description=Check FrostKeep backup health hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5min
+Unit=frostkeep-health.service
+
+[Install]
+WantedBy=timers.target

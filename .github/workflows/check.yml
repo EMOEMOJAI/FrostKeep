@@ -1,0 +1,47 @@
+name: Checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install required validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck acl unzip
+          curl --fail --location --retry 3 https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-amd64.zip --output "$RUNNER_TEMP/rclone.zip"
+          echo "982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab  $RUNNER_TEMP/rclone.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/rclone.zip" -d "$RUNNER_TEMP/rclone"
+          sudo install -m 0755 "$RUNNER_TEMP/rclone/rclone-v1.75.1-linux-amd64/rclone" /usr/local/bin/rclone
+          curl --fail --location --retry 3 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz --output "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          sudo install -m 0755 "$RUNNER_TEMP/gitleaks" /usr/local/bin/gitleaks
+      - run: bash scripts/check.sh
+        env:
+          FROSTKEEP_STRICT_CHECKS: '1'
+      - name: Verify Linux mapped-user permissions
+        run: sudo env PYTHONDONTWRITEBYTECODE=1 "$(command -v python3)" -m unittest discover -s tests -p test_permissions.py -v
+      - name: Verify exported package and metadata-free archive
+        run: |
+          python3 scripts/release.py --output dist/frostkeep --archive "$RUNNER_TEMP/frostkeep.zip"
+          python3 scripts/release.py --verify-archive "$RUNNER_TEMP/frostkeep.zip"
+          python3 scripts/release.py --check --workspace

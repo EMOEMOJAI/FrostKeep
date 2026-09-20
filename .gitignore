@@ -1,0 +1,32 @@
+# Private operational history, source artwork, release staging and real configuration
+/local/
+/dist/
+/config.json
+*.local.json
+.env
+.env.*
+!.env.example
+rclone.conf
+*.pem
+*.key
+*.before
+
+# Backups, runtime state, reports and logs
+*.tar.gz
+*.tar.zst
+*.vma.zst
+*.log
+*.sqlite*
+*.db
+MANIFEST.json
+STARTED.json
+COMPLETE.json
+FAILED.json
+
+# Development and platform artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.coverage
+htmlcov/
+.DS_Store

@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
+exec python3 "$ROOT/lib/frostkeep/frostkeep.py" "$@"

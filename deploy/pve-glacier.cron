@@ -1,0 +1,5 @@
+# Alternative to frostkeep.timer. Install exactly one scheduler.
+# Uses the host timezone. The compatibility script shares FrostKeep's lock.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 3 1 * * root umask 077; /usr/local/bin/frostkeep backup >>/var/log/frostkeep.log 2>&1

@@ -1,0 +1,13 @@
+{
+  "remote": "archive:",
+  "rclone_config": "/root/.config/rclone/rclone.conf",
+  "staging_dir": "/var/lib/vz/frostkeep",
+  "state_dir": "/var/lib/frostkeep",
+  "lock_file": "/run/lock/pve-glacier.lock",
+  "exclude_guests": [],
+  "minimum_free_bytes": 10737418240,
+  "command_timeout_seconds": 86400,
+  "notification_command": [],
+  "maximum_backup_age_hours": 840,
+  "keep_local_archives": false
+}

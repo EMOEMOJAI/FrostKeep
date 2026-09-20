@@ -1,0 +1,13 @@
+[Unit]
+Description=Check FrostKeep backup freshness and failures
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/frostkeep health --notify
+User=root
+UMask=0077
+TimeoutStartSec=90
+StandardOutput=journal
+StandardError=journal
