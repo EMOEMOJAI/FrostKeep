@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — pre-release
 
 - Configurable FrostKeep CLI with legacy command wrappers.
 - Isolated staging, encrypted guest archives, checksum manifests and verified completion markers.
