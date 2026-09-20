@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 — 2026-09-21
+
+- Clarify restore command help, execution flags, cleanup risks and option defaults.
+- Correct stale pre-release wording.
+
 ## 0.2.1 — 2026-09-20
 
 - First stable release.
