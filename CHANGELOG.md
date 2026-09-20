@@ -17,4 +17,4 @@
 - Recoverable finalization after hard stops, including older stranded runs, with regression tests.
 - Allowlisted, metadata-free releases and a shorter setup/recovery guide.
 
-Validate a full backup, cloud retrieval and isolated restore on your installation before relying on this pre-release.
+Validate a full backup, cloud retrieval and isolated restore on your installation before relying on FrostKeep.

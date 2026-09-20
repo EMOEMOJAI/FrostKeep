@@ -1234,42 +1234,48 @@ def status(cfg):
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--version", action="version", version=f"FrostKeep {VERSION}")
-    p.add_argument("--config", default="/etc/frostkeep/config.json")
+    p.add_argument("--config", default="/etc/frostkeep/config.json", help="Private JSON configuration (default: %(default)s)")
     sub = p.add_subparsers(dest="command", required=True)
     backup = sub.add_parser("backup", help="Back up local guests to an encrypted archive")
     backup.add_argument("--check", action="store_true", help="Preflight only; no dumps or uploads")
     backup.add_argument("guests", nargs="*", help="Optional explicit guest IDs")
     sub.add_parser("status", help="Show the latest run, not historical log totals")
     monitor = sub.add_parser("health", help="Check full-backup age, failure and interruption")
-    monitor.add_argument("--notify", action="store_true")
+    monitor.add_argument("--notify", action="store_true", help="Send unhealthy results through the configured notification command")
     recovery = sub.add_parser("resume", help="Plan a new run reusing verified completed guest uploads")
-    recovery.add_argument("run_id")
-    recovery.add_argument("--execute", action="store_true")
+    recovery.add_argument("run_id", help="Interrupted or failed run to resume")
+    recovery.add_argument("--execute", action="store_true", help="Start the planned backup; omit to preview only")
     prune = sub.add_parser("cleanup", help="Review removal of one local staging directory")
-    prune.add_argument("run_id")
-    prune.add_argument("--execute", action="store_true")
-    prune.add_argument("--allow-incomplete", action="store_true")
+    prune.add_argument("run_id", help="Run whose local staging directory will be removed")
+    prune.add_argument("--execute", action="store_true", help="Remove the planned local files; omit to preview only")
+    prune.add_argument("--allow-incomplete", action="store_true", help="Allow cleanup of unfinished runs, removing possible only copies and resume context")
     restore = sub.add_parser("restore", help="Inspect, retrieve, verify and restore archives")
     actions = restore.add_subparsers(dest="action", required=True)
     actions.add_parser("list", help="List remote run directories; listing is not proof of completion")
     inspect = actions.add_parser("inspect", help="Read a checksum-verified completion manifest")
-    inspect.add_argument("run_id")
-    for command in ("request", "retrieval-status", "download", "verify", "guest"):
-        action = actions.add_parser(command)
-        action.add_argument("run_id")
+    inspect.add_argument("run_id", help="Remote run directory to inspect")
+    for command, description in (
+        ("request", "Plan retrieval of one archived object; use --execute to submit"),
+        ("retrieval-status", "Show the remote retrieval status of one archive"),
+        ("download", "Download one archive and verify its size and SHA-256"),
+        ("verify", "Check a local file against its manifest size and SHA-256"),
+        ("guest", "Plan a guest restore to an unused ID; the restored guest stays stopped"),
+    ):
+        action = actions.add_parser(command, help=description, description=description)
+        action.add_argument("run_id", help="Remote run directory containing the manifest")
         action.add_argument("path", help="Exact relative file path from the manifest")
         if command == "request":
-            action.add_argument("--days", type=int, default=3)
-            action.add_argument("--tier", choices=("Bulk", "Standard"), default="Bulk")
-            action.add_argument("--execute", action="store_true")
+            action.add_argument("--days", type=int, default=3, help="Days to retain the temporary retrieved copy (default: %(default)s)")
+            action.add_argument("--tier", choices=("Bulk", "Standard"), default="Bulk", help="Retrieval tier (default: %(default)s)")
+            action.add_argument("--execute", action="store_true", help="Submit the retrieval request; charges may apply; omit to preview only")
         if command == "download":
             action.add_argument("--destination", required=True, help="Absolute private directory")
         if command in ("verify", "guest"):
-            action.add_argument("--file", required=True)
+            action.add_argument("--file", required=True, help="Local archive file to verify against the manifest")
         if command == "guest":
-            action.add_argument("--target-id", required=True)
-            action.add_argument("--storage", required=True)
-            action.add_argument("--execute", action="store_true")
+            action.add_argument("--target-id", required=True, help="Unused guest ID, different from the original")
+            action.add_argument("--storage", required=True, help="Proxmox storage for the restored guest")
+            action.add_argument("--execute", action="store_true", help="Restore the guest and leave it stopped; omit to preview only")
     return p
 
 
